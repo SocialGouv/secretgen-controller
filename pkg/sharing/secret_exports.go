@@ -4,14 +4,18 @@
 package sharing
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
 	"sync"
 
 	"github.com/go-logr/logr"
+	"github.com/tidwall/gjson"
 	sg2v1alpha1 "github.com/vmware-tanzu/carvel-secretgen-controller/pkg/apis/secretgen2/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 const (
@@ -81,12 +85,13 @@ type SecretMatcher struct {
 	FromName      string
 	FromNamespace string
 
-	FromNamespaceAnnotations map[string]string
-
 	ToNamespace string
 
 	Subject    string
 	SecretType corev1.SecretType
+
+	SecretImportReconciler *SecretImportReconciler
+	Ctx                    context.Context
 }
 
 // MatchedSecretsForImport filters secrets export cache by the given criteria.
@@ -182,14 +187,51 @@ func (es exportedSecret) Matches(matcher SecretMatcher, nsIsExcludedFromWildcard
 		}
 	}
 
-	nsAnnotations := es.export.StaticToNamespacesAnnotations()
-	if len(nsAnnotations) > 0 {
-		for _, nsAnnotation := range nsAnnotations {
-			if matcher.FromNamespaceAnnotations[nsAnnotation.Key] == nsAnnotation.Value {
-				return true
+	selectors := es.export.Spec.ToSelectorMatchFields
+	if len(selectors) > 0 {
+		nsName := matcher.ToNamespace
+		query := types.NamespacedName{
+			Name: nsName,
+		}
+		namespace := corev1.Namespace{}
+		err := matcher.SecretImportReconciler.client.Get(matcher.Ctx, query, &namespace)
+		if err == nil {
+			jsonNs, _ := json.Marshal(namespace)
+			for _, s := range selectors {
+				switch s.Operator {
+				case sg2v1alpha1.SelectorOperatorIn:
+					value := gjson.GetBytes(jsonNs, s.Key).String()
+					found := false
+					for _, svalue := range s.Values {
+						if svalue == value {
+							found = true
+							break
+						}
+					}
+					if !found {
+						return false
+					}
+				case sg2v1alpha1.SelectorOperatorNotIn:
+					value := gjson.GetBytes(jsonNs, s.Key).String()
+					for _, svalue := range s.Values {
+						if svalue == value {
+							return false
+						}
+					}
+				case sg2v1alpha1.SelectorOperatorExists:
+					if !gjson.GetBytes(jsonNs, s.Key).Exists() {
+						return false
+					}
+				case sg2v1alpha1.SelectorOperatorDoesNotExist:
+					if gjson.GetBytes(jsonNs, s.Key).Exists() {
+						return false
+					}
+				}
 			}
+			return true
 		}
 	}
+
 	if !es.matchesNamespace(matcher.ToNamespace, nsIsExcludedFromWildcard) {
 		return false
 	}

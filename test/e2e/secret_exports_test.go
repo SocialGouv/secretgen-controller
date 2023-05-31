@@ -44,13 +44,6 @@ metadata:
     field.cattle.io/projectId: "cluster1:project1"
 ---
 apiVersion: v1
-kind: Namespace
-metadata:
-  name: sg-test5
-  annotations:
-    field.cattle.io/projectId: "cluster1:project2"
----
-apiVersion: v1
 kind: Secret
 metadata:
   name: secret
@@ -70,11 +63,11 @@ spec:
   toNamespaces:
   - sg-test2
   - sg-test3
-  toNamespaceAnnotation:
-    field.cattle.io/projectId: "cluster1:project1"
-  toNamespaceAnnotations:
-    field.cattle.io/projectId: 
-    - "cluster1:project2"
+  toSelectorMatchFields:
+  - key: "metadata.annotations.field\\.cattle\\.io/projectId"
+    operator: In
+    values:
+    - "cluster1:project1"
 ---
 apiVersion: secretgen.carvel.dev/v1alpha1
 kind: SecretImport
@@ -97,14 +90,6 @@ kind: SecretImport
 metadata:
   name: secret
   namespace: sg-test4
-spec:
-  fromNamespace: sg-test1
----
-apiVersion: secretgen.carvel.dev/v1alpha1
-kind: SecretImport
-metadata:
-  name: secret
-  namespace: sg-test5
 spec:
   fromNamespace: sg-test1
 `
@@ -138,7 +123,7 @@ stringData:
 	})
 
 	logger.Section("Check imported secrets were created", func() {
-		for _, ns := range []string{"sg-test2", "sg-test3", "sg-test4", "sg-test5"} {
+		for _, ns := range []string{"sg-test2", "sg-test3", "sg-test4"} {
 			out := waitForSecretInNs(t, kubectl, ns, "secret")
 
 			var secret corev1.Secret
@@ -171,7 +156,7 @@ stringData:
 		// TODO proper waiting
 		time.Sleep(5 * time.Second)
 
-		for _, ns := range []string{"sg-test2", "sg-test3", "sg-test4", "sg-test5"} {
+		for _, ns := range []string{"sg-test2", "sg-test3", "sg-test4"} {
 			out := waitForSecretInNs(t, kubectl, ns, "secret")
 
 			var secret corev1.Secret
@@ -202,7 +187,7 @@ stringData:
 		// TODO proper waiting
 		time.Sleep(5 * time.Second)
 
-		for _, ns := range []string{"sg-test2", "sg-test3", "sg-test4", "sg-test5"} {
+		for _, ns := range []string{"sg-test2", "sg-test3", "sg-test4"} {
 			_, err := kubectl.RunWithOpts([]string{"get", "secret", "secret", "-n", ns},
 				RunOpts{AllowError: true, NoNamespace: true})
 			require.Error(t, err)

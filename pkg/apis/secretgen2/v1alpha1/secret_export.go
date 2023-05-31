@@ -39,15 +39,28 @@ type SecretExportList struct {
 	Items []SecretExport `json:"items"`
 }
 
+type SelectorOperator string
+
+const (
+	SelectorOperatorIn           SelectorOperator = "In"
+	SelectorOperatorNotIn                         = "NotIn"
+	SelectorOperatorExists                        = "Exists"
+	SelectorOperatorDoesNotExist                  = "DoesNotExist"
+)
+
+type SelectorMatchField struct {
+	Key      string
+	Operator SelectorOperator
+	Values   []string
+}
+
 type SecretExportSpec struct {
 	// +optional
 	ToNamespace string `json:"toNamespace,omitempty"`
 	// +optional
 	ToNamespaces []string `json:"toNamespaces,omitempty"`
 	// +optional
-	ToNamespaceAnnotation map[string]string `json:"toNamespaceAnnotation,omitempty"`
-	// +optional
-	ToNamespaceAnnotations map[string][]string `json:"toNamespaceAnnotations,omitempty"`
+	ToSelectorMatchFields []SelectorMatchField `json:"toSelectorMatchFields,omitempty"`
 }
 
 type SecretExportStatus struct {
@@ -74,38 +87,30 @@ func (e SecretExport) StaticToNamespaces() []string {
 	return result
 }
 
-// StaticToNamespacesAnnotations aggregate toNamespaceAnnotation and toNamespaceAnnotations as a single slice
-func (e SecretExport) StaticToNamespacesAnnotations() []*SecretExportAnnotation {
-	var result []*SecretExportAnnotation
-	for k, v := range e.Spec.ToNamespaceAnnotation {
-		result = append(result, &SecretExportAnnotation{
-			Key:   k,
-			Value: v,
-		})
-	}
-	for k, v := range e.Spec.ToNamespaceAnnotations {
-		for _, value := range v {
-			result = append(result, &SecretExportAnnotation{
-				Key:   k,
-				Value: value,
-			})
-		}
-	}
-	return result
-}
-
 func (e SecretExport) Validate() error {
 	var errs []error
 
 	toNses := e.StaticToNamespaces()
-	toNsesA := e.StaticToNamespacesAnnotations()
+	toSmf := e.Spec.ToSelectorMatchFields
 
-	if len(toNses) == 0 && len(toNsesA) == 0 {
+	if len(toNses) == 0 && len(toSmf) == 0 {
 		errs = append(errs, fmt.Errorf("Expected to have at least one non-empty to namespace or to namespace annotation"))
 	}
 	for _, ns := range toNses {
 		if len(ns) == 0 {
 			errs = append(errs, fmt.Errorf("Expected to namespace to be non-empty"))
+		}
+	}
+	for _, s := range toSmf {
+		switch s.Operator {
+		case SelectorOperatorIn, SelectorOperatorNotIn:
+			if len(s.Values) == 0 {
+				errs = append(errs, fmt.Errorf("Values must be specified when `operator` is 'In' or 'NotIn'"))
+			}
+		case SelectorOperatorExists, SelectorOperatorDoesNotExist:
+			if len(s.Values) > 0 {
+				errs = append(errs, fmt.Errorf("Values may not be specified when `operator` is 'Exists' or 'DoesNotExist'"))
+			}
 		}
 	}
 
