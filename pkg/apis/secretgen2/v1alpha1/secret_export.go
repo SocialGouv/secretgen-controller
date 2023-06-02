@@ -39,8 +39,10 @@ type SecretExportList struct {
 	Items []SecretExport `json:"items"`
 }
 
+// SelectorOperator is a part of SelectorMatchField
 type SelectorOperator string
 
+// SelectorOperator values
 const (
 	SelectorOperatorIn           SelectorOperator = "In"
 	SelectorOperatorNotIn                         = "NotIn"
@@ -48,6 +50,7 @@ const (
 	SelectorOperatorDoesNotExist                  = "DoesNotExist"
 )
 
+// SelectorMatchField is a selector field to match against namespace definition
 type SelectorMatchField struct {
 	Key      string
 	Operator SelectorOperator
