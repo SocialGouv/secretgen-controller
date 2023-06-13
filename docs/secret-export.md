@@ -104,8 +104,6 @@ SecretExport CRD allows to "offer" secrets for export.
     - In: Label's value must match one of the specified values.
     - NotIn: Label's value must not match any of the specified values.
     - Exists: Pod must include a label with the specified key (the value isn't important). When using this operator, the values field should not be specified.
-    - NotIn: Label's value must not match any of the specified values.
-    - Exists: Pod must include a label with the specified key (the value isn't important). When using this operator, the values field should not be specified.
     - DoesNotExist: Pod must not include a label with the specified key. The values property must not be specified.
 
   - `values` (optional; array if string) Values to match on the resource key using the comparison operator.
