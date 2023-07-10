@@ -101,11 +101,10 @@ type SecretMatcher struct {
 	Ctx context.Context
 }
 
-// DJO add this instead of 	selectors := es.export.Spec.ToSelectorMatchFields
 // NamespacesMatcher allows to specify criteria for matching exported secrets based on namespaces fields.
-// type NamespacesMatcher{
-
-// }
+type NamespacesMatcher struct {
+	Selectors []sg2v1alpha1.SelectorMatchField
+}
 
 // MatchedSecretsForImport filters secrets export cache by the given criteria.
 // Returned order (last in the array is most specific):
@@ -144,8 +143,9 @@ func (se *SecretExports) MatchedSecretsForImport(matcher SecretMatcher, nsIsExcl
 
 // exportedSecret is used for keeping track export->secret pair.
 type exportedSecret struct {
-	export *sg2v1alpha1.SecretExport
-	secret *corev1.Secret
+	export            *sg2v1alpha1.SecretExport
+	secret            *corev1.Secret
+	namespacesMatcher NamespacesMatcher
 }
 
 func newExportedSecret(export *sg2v1alpha1.SecretExport, secret *corev1.Secret) exportedSecret {
@@ -164,7 +164,10 @@ func newExportedSecret(export *sg2v1alpha1.SecretExport, secret *corev1.Secret) 
 		}
 		secret = secret.DeepCopy()
 	}
-	return exportedSecret{export.DeepCopy(), secret}
+
+	namespacesMatcher := NamespacesMatcher{Selectors: export.Spec.ToSelectorMatchFields}
+
+	return exportedSecret{export.DeepCopy(), secret, namespacesMatcher}
 }
 
 func (es exportedSecret) Key() string {
@@ -200,7 +203,8 @@ func (es exportedSecret) Matches(matcher SecretMatcher, nsIsExcludedFromWildcard
 		}
 	}
 
-	selectors := es.export.Spec.ToSelectorMatchFields
+	namespacesMatcher := es.namespacesMatcher
+	selectors := namespacesMatcher.Selectors
 
 	isMatched := false
 
