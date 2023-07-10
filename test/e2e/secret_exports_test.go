@@ -63,8 +63,8 @@ spec:
   toNamespaces:
   - sg-test2
   - sg-test3
-  toSelectorMatchFields:
-  - key: "metadata.annotations.field\\.cattle\\.io/projectId"
+  dangerousToNamespacesSelector:
+  - key: "metadata.annotations['field\\.cattle\\.io/projectId']"
     operator: In
     values:
     - "cluster1:project1"

@@ -45,8 +45,8 @@ metadata:
   namespace: user1
 spec:
   toNamespace: user2
-  toSelectorMatchFields:
-    - key: metadata.annotations.field\\.cattle\\.io/projectId: 
+  dangerousToNamespacesSelector:
+    - key: "metadata.annotations['field\\.cattle\\.io/projectId']"
       operator: In
       value: "cluster1:project1"
 
@@ -97,7 +97,7 @@ SecretExport CRD allows to "offer" secrets for export.
 
 - `toNamespace` (optional; string) Destination namespace for offer. Use `*` to indicate all namespaces.
 - `toNamespaces` (optional; array of strings) List of destination namespaces for offer.
-- `toSelectorMatchFields` (optional; array of selector objects) List of matchers for destination namespaces. If multiple expressions are specified, all those expressions must evaluate to true for the selector to match a namespace. The selector object is composed as follows:
+- `dangerousToNamespacesSelector` (optional; array of selector objects) List of matchers for destination namespaces. If multiple expressions are specified, all those expressions must evaluate to true for the selector to match a namespace. The selector object is composed as follows:
   - `key` (required; string) Property to target on the resource for the match. It's support dot notation from [GJSON syntax](https://github.com/tidwall/gjson/blob/master/SYNTAX.md).
   - `operator` (required; enum string) Type of comparison. Must be one of `In`, `NotIn`, `Exists`, `DoesNotExist`.
     Operator explanations:

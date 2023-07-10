@@ -52,9 +52,9 @@ const (
 
 // SelectorMatchField is a selector field to match against namespace definition
 type SelectorMatchField struct {
-	Key      string
-	Operator SelectorOperator
-	Values   []string
+	Key      string           `json:"key,omitempty"`
+	Operator SelectorOperator `json:"operator,omitempty"`
+	Values   []string         `json:"values,omitempty"`
 }
 
 type SecretExportSpec struct {
@@ -63,7 +63,7 @@ type SecretExportSpec struct {
 	// +optional
 	ToNamespaces []string `json:"toNamespaces,omitempty"`
 	// +optional
-	ToSelectorMatchFields []SelectorMatchField `json:"toSelectorMatchFields,omitempty"`
+	ToSelectorMatchFields []SelectorMatchField `json:"dangerousToNamespacesSelector,omitempty"`
 }
 
 type SecretExportStatus struct {

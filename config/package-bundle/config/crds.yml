@@ -40,7 +40,7 @@ spec:
                 items:
                   type: string
                 type: array
-              toSelectorMatchFields:
+              dangerousToNamespacesSelector:
                 type: array
                 items:
                   properties:

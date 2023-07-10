@@ -181,11 +181,10 @@ func (r *SecretImportReconciler) reconcile(
 	log.Info("Reconciling")
 
 	matcher := SecretMatcher{
-		FromName:               secretImport.Name,
-		FromNamespace:          secretImport.Spec.FromNamespace,
-		ToNamespace:            secretImport.Namespace,
-		SecretImportReconciler: r,
-		Ctx:                    ctx,
+		FromName:      secretImport.Name,
+		FromNamespace: secretImport.Spec.FromNamespace,
+		ToNamespace:   secretImport.Namespace,
+		Ctx:           ctx,
 	}
 
 	nscheck := makeNamespaceWildcardExclusionCheck(ctx, r.client, log)

@@ -4,6 +4,7 @@
 package sharing
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,10 +13,11 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
-	"github.com/tidwall/gjson"
 	sg2v1alpha1 "github.com/vmware-tanzu/carvel-secretgen-controller/pkg/apis/secretgen2/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/jsonpath"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -42,17 +44,23 @@ type SecretExportsProvider interface {
 // (SecretExports is used by SecretExportReconciler to export/unexport secrets;
 // SecretExports is used by SecretReconciler to determine imported secrets.)
 type SecretExports struct {
-	log logr.Logger
+	log       logr.Logger
+	k8sReader K8sReader
 
 	exportedSecretsLock sync.RWMutex
 	exportedSecrets     map[string]exportedSecret
 }
 
+// K8sReader is an interface for reading Kubernetes resources.
+type K8sReader interface {
+	Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error
+}
+
 var _ SecretExportsProvider = &SecretExports{}
 
 // NewSecretExports constructs new SecretExports cache.
-func NewSecretExports(log logr.Logger) *SecretExports {
-	return &SecretExports{log: log, exportedSecrets: map[string]exportedSecret{}}
+func NewSecretExports(k8sReader K8sReader, log logr.Logger) *SecretExports {
+	return &SecretExports{log: log, k8sReader: k8sReader, exportedSecrets: map[string]exportedSecret{}}
 }
 
 // Export adds the in-memory representation (cached)
@@ -90,9 +98,14 @@ type SecretMatcher struct {
 	Subject    string
 	SecretType corev1.SecretType
 
-	SecretImportReconciler *SecretImportReconciler
-	Ctx                    context.Context
+	Ctx context.Context
 }
+
+// DJO add this instead of 	selectors := es.export.Spec.ToSelectorMatchFields
+// NamespacesMatcher allows to specify criteria for matching exported secrets based on namespaces fields.
+// type NamespacesMatcher{
+
+// }
 
 // MatchedSecretsForImport filters secrets export cache by the given criteria.
 // Returned order (last in the array is most specific):
@@ -111,7 +124,7 @@ func (se *SecretExports) MatchedSecretsForImport(matcher SecretMatcher, nsIsExcl
 	var matched []exportedSecret
 
 	for _, exportedSec := range se.exportedSecrets {
-		if exportedSec.Matches(matcher, nsIsExcludedFromWildcard, se.log) {
+		if exportedSec.Matches(matcher, nsIsExcludedFromWildcard, se.log, se.k8sReader) {
 			matched = append(matched, exportedSec)
 		}
 	}
@@ -162,7 +175,7 @@ func (es exportedSecret) Secret() *corev1.Secret {
 	return es.secret.DeepCopy()
 }
 
-func (es exportedSecret) Matches(matcher SecretMatcher, nsIsExcludedFromWildcard NamespaceWildcardExclusionCheck, log logr.Logger) bool {
+func (es exportedSecret) Matches(matcher SecretMatcher, nsIsExcludedFromWildcard NamespaceWildcardExclusionCheck, log logr.Logger, k8sReader K8sReader) bool {
 
 	if matcher.Subject != "" {
 		// TODO we currently do not match by subject
@@ -188,19 +201,43 @@ func (es exportedSecret) Matches(matcher SecretMatcher, nsIsExcludedFromWildcard
 	}
 
 	selectors := es.export.Spec.ToSelectorMatchFields
-	if len(selectors) > 0 {
+
+	isMatched := false
+
+	if es.matchesNamespace(matcher.ToNamespace, nsIsExcludedFromWildcard) {
+		isMatched = true
+	}
+
+	if !isMatched && len(selectors) > 0 {
 		nsName := matcher.ToNamespace
 		query := types.NamespacedName{
 			Name: nsName,
 		}
 		namespace := corev1.Namespace{}
-		err := matcher.SecretImportReconciler.client.Get(matcher.Ctx, query, &namespace)
+		err := k8sReader.Get(matcher.Ctx, query, &namespace)
+
+		jsonNsString, _ := json.Marshal(namespace)
+		var jsonNsObject interface{}
+		json.Unmarshal(jsonNsString, &jsonNsObject)
+
 		if err == nil {
-			jsonNs, _ := json.Marshal(namespace)
+
 			for _, s := range selectors {
+
+				jp := jsonpath.New("jsonpath")
+
+				jsonPathKey := "{." + s.Key + "}"
+				err := jp.Parse(jsonPathKey)
+				if err != nil {
+					log.Error(err, fmt.Sprintf("invalid jsonpath: %s", jsonPathKey))
+					return false
+				}
+				var valueBuffer bytes.Buffer
+				err = jp.Execute(&valueBuffer, jsonNsObject)
+				value := valueBuffer.String()
+
 				switch s.Operator {
 				case sg2v1alpha1.SelectorOperatorIn:
-					value := gjson.GetBytes(jsonNs, s.Key).String()
 					found := false
 					for _, svalue := range s.Values {
 						if svalue == value {
@@ -212,30 +249,26 @@ func (es exportedSecret) Matches(matcher SecretMatcher, nsIsExcludedFromWildcard
 						return false
 					}
 				case sg2v1alpha1.SelectorOperatorNotIn:
-					value := gjson.GetBytes(jsonNs, s.Key).String()
 					for _, svalue := range s.Values {
 						if svalue == value {
 							return false
 						}
 					}
 				case sg2v1alpha1.SelectorOperatorExists:
-					if !gjson.GetBytes(jsonNs, s.Key).Exists() {
+					if value != "" {
 						return false
 					}
 				case sg2v1alpha1.SelectorOperatorDoesNotExist:
-					if gjson.GetBytes(jsonNs, s.Key).Exists() {
+					if value != "" {
 						return false
 					}
 				}
 			}
-			return true
+			isMatched = true
 		}
 	}
 
-	if !es.matchesNamespace(matcher.ToNamespace, nsIsExcludedFromWildcard) {
-		return false
-	}
-	return true
+	return isMatched
 }
 
 func (es exportedSecret) matchesNamespace(nsToMatch string, nsIsExcludedFromWildcard NamespaceWildcardExclusionCheck) bool {
